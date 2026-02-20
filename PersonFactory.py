@@ -41,8 +41,14 @@ class PersonFactory:
         with open(ranking_file, "r") as f:
             rankings = f.readline().strip().split(",")
 
-            for i in range(len(rankings)):
-                self.rankings_dict[i] = rankings[i]
+            for i, val in enumerate(rankings, start=1):
+                try:
+                    prob = float(val)
+                except (ValueError, TypeError):
+                    prob = 0.0
+                # store both numeric and string keys so lookups succeed regardless of types
+                self.rankings_dict[i] = prob
+                self.rankings_dict[str(i)] = prob
 
     def _set_birth_rates(self):
         """Set the birth rates for each year in a birth_rates_dict."""
@@ -136,21 +142,58 @@ class PersonFactory:
     def _get_name(self, year_born):
         decade_key = self._decade(year_born)[0]
         bucket = self.first_names_dict.get(decade_key)
+
+        # build a flattened list of all first names as a fallback / diversity source
+        all_names = []
+        for b in self.first_names_dict.values():
+            if b and b.get("names"):
+                all_names.extend(b["names"])
+
+        # preferred choice from the decade bucket if available
         if bucket and bucket.get("names"):
-            return random.choices(bucket["names"], weights=bucket["frequencies"])[0]
-        return None
+            name = random.choices(bucket["names"], weights=bucket["frequencies"])[0]
+        elif all_names:
+            name = random.choice(all_names)
+        else:
+            name = "Alex"  # final fallback
+
+        return name
 
     def _get_last_name(self, year_born):
         # convert year like 1953 -> "1950s"
         decade_key = self._decade(year_born)[0]
         bucket = self.last_names_dict.get(decade_key)
+
+        # If no bucket for that decade, fall back to any available last name
+        if not bucket or not bucket.get("LastNames"):
+            # gather all last names from all decades
+            all_last_names = []
+            for b in self.last_names_dict.values():
+                if b and b.get("LastNames"):
+                    all_last_names.extend(b["LastNames"])
+            if all_last_names:
+                return random.choice(all_last_names)
+            # final fallback
+            return "Smith"
+
+        # build numeric weights safely from Ranks -> ranking probabilities
         weights = []
         for rank in bucket.get("Ranks", []):
             weight = 0.0
-            weight = float(self.rankings_dict.get(rank, 0))
+            try:
+                # try rank as integer index into rankings_dict
+                key = int(rank)
+                weight = float(self.rankings_dict.get(key, self.rankings_dict.get(str(key), 0.0)))
+            except Exception:
+                # fallback: maybe the rank itself is a probability
+                try:
+                    weight = float(rank)
+                except Exception:
+                    weight = 0.0
             weights.append(weight)
-        if bucket and bucket.get("LastNames"):
-            return random.choices(bucket["LastNames"], weights=weights)[0]
+
+       
+        return random.choices(bucket["LastNames"], weights=weights)[0]
 
     def _get_birth_rate(self, year):
         decade_key = self._decade(year)[0]
@@ -206,7 +249,7 @@ class PersonFactory:
         return person
 
     def try_create_spouse(self, person: Person):
-        spouse = self.get_spouse(person)
+        spouse = person.get_spouse()
         if not spouse:
             # Create a new spouse if not found
             spouse_year_born = person.get_year_born() + random.randint(-10, 10)

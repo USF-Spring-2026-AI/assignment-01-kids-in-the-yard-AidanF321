@@ -26,8 +26,15 @@ class FamilyTree:
         while queue:
             current = queue.pop(0)
             self.family_tree.append(current)
-            self._add_spouse(current)
-            self._add_children(current)
+            
+            new_spouse = self._add_spouse(current)
+            new_children = self._add_children(current)
+
+            if new_spouse:
+                queue.append(new_spouse)
+            if new_children:
+                queue.extend(new_children)
+
             # Stop if we reach the end year
             if current.get_year_born() > self.end_year:
                 break
@@ -45,8 +52,6 @@ class FamilyTree:
         
 
         self.root_last_names = [Adam.last_name, Eve.last_name]
-        self.family_tree.append(Adam)
-        self.family_tree.append(Eve)
         return [Adam, Eve]
 
     def _add_children(self, parent: Person):
@@ -55,18 +60,17 @@ class FamilyTree:
         """
         self.person_factory.try_create_children(parent, self.root_last_names)
         if parent.had_children:
-            for child in parent.children:
-                self.family_tree.append(child)
+            return list(parent.children)
+        return []
 
     def _add_spouse(self, person: Person):
         """
         Add a spouse to the given person.
         """
         if person.get_spouse():
-            return
+            return None
         self.person_factory.try_create_spouse(person)
-        if person.get_spouse():
-            self.family_tree.append(person.get_spouse())
+        return person.get_spouse()
 
     
 
@@ -76,11 +80,13 @@ class FamilyTree:
                                "(2) Total number of people in the tree by decade\n" +
                                "(3) Duplicate Names\n" +
                                "(4) Exit\n"
-            )
+            ).strip()
             if user_input.lower() == "exit":
                 break
             # Process the user input and query the family tree
             self._process_query(user_input)
+            if self.stop:
+                break
 
     def _process_query(self, query: str):
         if query == "1":
@@ -88,7 +94,7 @@ class FamilyTree:
         elif query == "2":
             for decade in range(1950, 2120, 10):
                 count = sum(1 for p in self.family_tree if p.get_year_born() // 10 == decade // 10)
-                print(f"Total number of people in the tree born in the {decade}s: {count}")
+                print(f"{decade}s: {count}")
         elif query == "3":
             duplicates = self._find_duplicate_names()
             if duplicates:
@@ -105,19 +111,15 @@ class FamilyTree:
         name_counts = {}
         for person in self.family_tree:
             full_name = f"{person.first_name} {person.last_name}"
-            if full_name in name_counts:
-                name_counts[full_name] += 1
-            else:
-                name_counts[full_name] = 1
-        duplicates = []
-        for name, count in name_counts.items():
-            if count > 1:
-                duplicates.append((name, count))
+            name_counts[full_name] = name_counts.get(full_name, 0) + 1
+        # return dict of duplicates so callers can use .items()
+        duplicates = {name: count for name, count in name_counts.items() if count > 1}
         return duplicates
 
 def main():
     family_tree = FamilyTree()
     family_tree.generate_family_tree()
+    print("Root last names:", family_tree.root_last_names)
     while not family_tree.stop:
         family_tree._handle_input()
     # You can add more functionality here, like querying the family tree
